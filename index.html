@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reaksa Wallet - Fix Edit & Export</title>
+    
+    <link rel="icon" type="image/png" href="https://i.postimg.cc/x8XThxPh/Chat-GPT-Image-Dec-6-2025-05-09-49-PM.png">
+    
+    <!-- Libraries -->
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-database-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;600&display=swap');
+        :root { --primary: #4361ee; --income: #2ecc71; --expense: #ef476f; --dark: #2b2d42; --bg: #f4f7fe; }
+        
+        body { font-family: 'Kantumruy Pro', sans-serif; background: var(--bg); margin: 0; color: var(--dark); overflow-x: hidden; }
+
+        .container { max-width: 1200px; margin: auto; padding: 15px; display: none; }
+        .card { background: #fff; border-radius: 25px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.02); margin-bottom: 20px; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+        .stat-card { padding: 20px; border-radius: 20px; color: white; text-align: center; }
+        .inc { background: linear-gradient(135deg, #2ecc71, #27ae60); }
+        .exp { background: linear-gradient(135deg, #ef476f, #d63031); }
+        .bal { background: linear-gradient(135deg, #4361ee, #3f51b5); }
+
+        input, select, .btn { width: 100%; padding: 14px; margin: 8px 0; border-radius: 15px; border: 2px solid #f0f3f7; font-family: inherit; font-size: 16px; box-sizing: border-box; }
+        .btn { border: none; cursor: pointer; font-weight: 600; background: var(--primary); color: white; transition: 0.3s; }
+
+        .item { display: flex; align-items: center; justify-content: space-between; padding: 15px; border-radius: 20px; background: #fafbfc; margin-bottom: 10px; border: 1px solid #f1f4f9; }
+        .action-btns { font-size: 11px; display: flex; gap: 12px; margin-top: 5px; font-weight: 600; }
+        .edit-btn { color: var(--primary); cursor: pointer; }
+        .del-btn { color: var(--expense); cursor: pointer; }
+
+        .footer { text-align: center; padding: 40px; border-top: 1px solid #eee; margin-top: 30px; background: #fff; }
+        .donate-btn { display: inline-block; background: linear-gradient(135deg, #ffd700, #ff8c00); color: white; padding: 12px 35px; border-radius: 30px; text-decoration: none; font-weight: bold; animation: pulse 2s infinite; margin-top: 15px; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+    </style>
+</head>
+<body>
+
+<div class="container" id="app-container">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px;">
+        <img src="https://i.postimg.cc/x8XThxPh/Chat-GPT-Image-Dec-6-2025-05-09-49-PM.png" style="height:50px; border-radius:12px;">
+        <button class="btn" style="width:auto; background:#fee2e2; color:#ef476f; padding:8px 18px;" onclick="auth.signOut()">ចាកចេញ</button>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card inc"><span>ចំណូល</span><h2 id="d-inc">$0</h2></div>
+        <div class="stat-card exp"><span>ចំណាយ</span><h2 id="d-exp">$0</h2></div>
+        <div class="stat-card bal"><span>សល់សុទ្ធ</span><h2 id="d-bal">$0</h2></div>
+    </div>
+
+    <div class="main-layout">
+        <div class="left-col">
+            <div class="card">
+                <h3 id="form-title">📝 កត់ត្រាថ្មី</h3>
+                <input type="hidden" id="edit-key">
+                <input type="date" id="entry-date">
+                <input type="text" id="desc" placeholder="បរិយាយ...">
+                <input type="number" id="amount" placeholder="ទឹកប្រាក់ ($)">
+                <select id="cat">
+                    <option value="ចំណូល">💰 ចំណូល</option>
+                    <option value="ម្ហូបអាហារ">🍲 ម្ហូបអាហារ</option>
+                    <option value="សាំង/ធ្វើដំណើរ">🚗 សាំង/ធ្វើដំណើរ</option>
+                    <option value="ផ្សេងៗ">🎮 ផ្សេងៗ</option>
+                </select>
+                <button class="btn" id="save-btn" onclick="saveData()">រក្សាទុក</button>
+                <button class="btn" id="cancel-btn" style="display:none; background:#bbb; margin-top:5px;" onclick="resetForm()">បោះបង់</button>
+            </div>
+        </div>
+
+        <div class="right-col">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                    <h3 style="margin:0;">⏳ ប្រវត្តិប្រតិបត្តិការ</h3>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn" style="width:auto; background:#2ecc71; padding:8px 15px; font-size:12px;" onclick="exportExcel()">Excel</button>
+                        <button class="btn" style="width:auto; background:var(--dark); padding:8px 15px; font-size:12px;" onclick="generateProfessionalPDF()">PDF</button>
+                    </div>
+                </div>
+                
+                <div style="display:flex; gap:10px; margin-bottom:15px;">
+                    <select id="sort-year" onchange="filterData()" style="flex:1; margin:0;"></select>
+                    <select id="sort-month" onchange="filterData()" style="flex:1; margin:0;">
+                        <option value="all">ទាំងអស់</option>
+                        <option value="01">មករា</option><option value="02">កុម្ភៈ</option><option value="03">មីនា</option>
+                        <option value="04">មេសា</option><option value="05">ឧសភា</option><option value="06">មិថុនា</option>
+                        <option value="07">កក្កដា</option><option value="08">សីហា</option><option value="09">កញ្ញា</option>
+                        <option value="10">តុលា</option><option value="11">វិច្ឆិកា</option><option value="12">ធ្នូ</option>
+                    </select>
+                </div>
+                <div id="data-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <img src="https://i.postimg.cc/x8XThxPh/Chat-GPT-Image-Dec-6-2025-05-09-49-PM.png" style="height:50px; border-radius:10px;"><br>
+        <div style="margin: 15px 0;">
+            <a href="https://t.me/ReaksaAds" target="_blank" style="text-decoration:none; color:#0088cc; font-weight:bold;">✈️ Telegram</a>
+            <span style="color:#ddd; margin:0 10px;">|</span>
+            <span style="font-weight:500;">📞 015 812 050 / 068 566 402</span>
+        </div>
+        <p style="font-size:12px; color:#aaa;">© 2026 Reaksa Ads. All rights reserved.</p>
+        <a href="https://link.payway.com.kh/ABAPAYRR442588h" target="_blank" class="donate-btn">☕ Donate / ឧបត្ថម្ភកាហ្វេ</a>
+    </div>
+</div>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyDJ-elcBfE3XjBscWxzljm4Tp0Zd2efIUM",
+        authDomain: "system-1c7b5.firebaseapp.com",
+        projectId: "system-1c7b5",
+        storageBucket: "system-1c7b5.firebasestorage.app",
+        messagingSenderId: "704156397881",
+        appId: "1:704156397881:web:752ba6b379fe9b21c3f8e8",
+        databaseURL: "https://system-1c7b5-default-rtdb.firebaseio.com"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth(), database = firebase.database();
+    let allRecords = {};
+
+    document.getElementById('entry-date').valueAsDate = new Date();
+
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            document.getElementById('app-container').style.display = 'block';
+            initYearSelector();
+            database.ref('users/'+user.uid+'/records').on('value', s => {
+                allRecords = s.val() || {};
+                filterData();
+            });
+        } else {
+            window.location.reload();
+        }
+    });
+
+    function initYearSelector() {
+        const sel = document.getElementById('sort-year');
+        if(sel.options.length > 0) return;
+        const currentYear = new Date().getFullYear();
+        for(let y = currentYear; y >= 2020; y--) {
+            let opt = document.createElement('option');
+            opt.value = y; opt.innerText = "ឆ្នាំ " + y;
+            sel.appendChild(opt);
+        }
+        sel.value = currentYear;
+    }
+
+    function filterData() {
+        const year = document.getElementById('sort-year').value;
+        const month = document.getElementById('sort-month').value;
+        const list = document.getElementById('data-list'); list.innerHTML = "";
+        let iT = 0, eT = 0;
+
+        Object.keys(allRecords).reverse().forEach(key => {
+            const item = allRecords[key];
+            const d = new Date(item.date);
+            if(d.getFullYear().toString() === year && (month === 'all' || String(d.getMonth()+1).padStart(2,'0') === month)) {
+                const isInc = item.cat === 'ចំណូល';
+                isInc ? iT += item.amt : eT += item.amt;
+                list.innerHTML += `<div class="item">
+                    <div><strong>${item.desc}</strong> <small>(${item.cat})</small><br><small style="color:#bbb;">${item.date}</small></div>
+                    <div style="text-align:right;">
+                        <span style="color:${isInc?'var(--income)':'var(--expense)'}; font-weight:bold;">$${item.amt.toLocaleString()}</span>
+                        <div class="action-btns">
+                            <span class="edit-btn" onclick="editItem('${key}')">កែ</span>
+                            <span class="del-btn" onclick="deleteItem('${key}')">លុប</span>
+                        </div>
+                    </div>
+                </div>`;
+            }
+        });
+        document.getElementById('d-inc').innerText = `$${iT.toLocaleString()}`;
+        document.getElementById('d-exp').innerText = `$${eT.toLocaleString()}`;
+        document.getElementById('d-bal').innerText = `$${(iT-eT).toLocaleString()}`;
+    }
+
+    function saveData() {
+        const key = document.getElementById('edit-key').value;
+        const data = {
+            date: document.getElementById('entry-date').value,
+            desc: document.getElementById('desc').value,
+            amt: parseFloat(document.getElementById('amount').value),
+            cat: document.getElementById('cat').value
+        };
+        if(!data.desc || isNaN(data.amt)) return alert("សូមបំពេញឱ្យគ្រប់!");
+
+        const ref = database.ref('users/'+auth.currentUser.uid+'/records');
+        if(key) {
+            ref.child(key).update(data).then(() => resetForm());
+        } else {
+            ref.push(data);
+        }
+        document.getElementById('desc').value = ""; document.getElementById('amount').value = "";
+    }
+
+    function editItem(key) {
+        const item = allRecords[key];
+        document.getElementById('edit-key').value = key;
+        document.getElementById('entry-date').value = item.date;
+        document.getElementById('desc').value = item.desc;
+        document.getElementById('amount').value = item.amt;
+        document.getElementById('cat').value = item.cat;
+        
+        document.getElementById('form-title').innerText = "✏️ កែសម្រួលទិន្នន័យ";
+        document.getElementById('save-btn').innerText = "ធ្វើបច្ចុប្បន្នភាព";
+        document.getElementById('cancel-btn').style.display = "block";
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetForm() {
+        document.getElementById('edit-key').value = "";
+        document.getElementById('form-title').innerText = "📝 កត់ត្រាថ្មី";
+        document.getElementById('save-btn').innerText = "រក្សាទុក";
+        document.getElementById('cancel-btn').style.display = "none";
+        document.getElementById('desc').value = ""; document.getElementById('amount').value = "";
+        document.getElementById('entry-date').valueAsDate = new Date();
+    }
+
+    function deleteItem(key) { if(confirm("លុបទិន្នន័យនេះ?")) database.ref('users/'+auth.currentUser.uid+'/records/'+key).remove(); }
+
+    function generateProfessionalPDF() {
+        let iT = 0, eT = 0;
+        let rows = "";
+        const year = document.getElementById('sort-year').value;
+        const month = document.getElementById('sort-month').value;
+
+        Object.values(allRecords).forEach(item => {
+            const d = new Date(item.date);
+            if(d.getFullYear().toString() === year && (month === 'all' || String(d.getMonth()+1).padStart(2,'0') === month)) {
+                const isInc = item.cat === 'ចំណូល';
+                isInc ? iT += item.amt : eT += item.amt;
+                rows += `<tr><td>${item.date}</td><td>${item.desc}</td><td>${item.cat}</td><td style="text-align:right; font-weight:bold; color:${isInc?'#2ecc71':'#ef476f'}">${isInc?'+':'-'}$${item.amt.toLocaleString()}</td></tr>`;
+            }
+        });
+
+        const pdfContent = `<div style="font-family:'Kantumruy Pro',sans-serif;padding:20px;"><div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #4361ee;padding-bottom:15px;"><div><h1 style="color:#4361ee;margin:0;">REAKSA ADS</h1><p style="margin:5px 0;color:#666;">Financial Report / របាយការណ៍ហិរញ្ញវត្ថុ</p></div><img src="https://i.postimg.cc/x8XThxPh/Chat-GPT-Image-Dec-6-2025-05-09-49-PM.png" height="60"></div><div style="display:flex;justify-content:space-between;margin:25px 0;padding:15px;background:#f8f9fa;border-radius:15px;text-align:center;"><div style="flex:1;"><small>ចំណូល</small><br><strong style="color:#2ecc71;">$${iT.toLocaleString()}</strong></div><div style="flex:1;"><small>ចំណាយ</small><br><strong style="color:#ef476f;">$${eT.toLocaleString()}</strong></div><div style="flex:1;"><small>សមតុល្យ</small><br><strong style="color:#4361ee;">$${(iT-eT).toLocaleString()}</strong></div></div><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f1f1f1;text-align:left;"><th style="padding:10px;">កាលបរិច្ឆេទ</th><th style="padding:10px;">បរិយាយ</th><th style="padding:10px;">ប្រភេទ</th><th style="padding:10px;text-align:right;">ទឹកប្រាក់</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+        const opt = { margin: 0.3, filename: 'Reaksa_Report.pdf', image: { type: 'jpeg', quality: 1 }, html2canvas: { scale: 3, useCORS: true }, jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }, pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } };
+        html2pdf().set(opt).from(pdfContent).save();
+    }
+
+    function exportExcel() {
+        const data = Object.values(allRecords).map(i => ({ "កាលបរិច្ឆេទ": i.date, "បរិយាយ": i.desc, "ប្រភេទ": i.cat, "ទឹកប្រាក់ ($)": i.amt }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Records");
+        XLSX.writeFile(wb, "Reaksa_Wallet.xlsx");
+    }
+</script>
+</body>
+</html>
